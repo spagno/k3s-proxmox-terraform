@@ -1,0 +1,11 @@
+apiVersion: crd.antrea.io/v1alpha2
+kind: Egress
+metadata:
+  name: egress
+spec:
+  appliedTo:
+    namespaceSelector:
+      matchLabels:
+        egress: pool-download
+  egressIP: 192.168.20.10
+  externalIPPool: egress-pool-download

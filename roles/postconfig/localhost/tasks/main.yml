@@ -1,0 +1,70 @@
+---
+- name: test kubeconfig path
+  stat:
+    path: ~/.kube/config
+  register: kubeconfig_path
+
+- name: replace host ip address in the kubeconfig
+  replace:
+    path: ~/.kube/config
+    regexp: "https://127.0.0.1:6443"
+    replace: "https://{{ master_ip }}:6443"
+  when: kubeconfig_path and copy_kubeconfig
+
+- name: Change k3s.yaml permissions to 644
+  file:
+    path: ~/.kube/config
+    mode: "600"
+
+- name: check if helm is installed /usr/local/bin/helm
+  stat:
+    path: $HOME/.config/helm/repositories.yaml
+  register: helm_check
+
+- name: Download get-helm-3
+  get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: ~/get-helm-3.sh
+    mode: "700"
+  when: not helm_check.stat.exists
+
+- name: install helm if not exist
+  command: >-
+    ~/get-helm-3.sh
+  when: not helm_check.stat.exists
+  changed_when: true
+
+- name: Install Antrea CNI
+  shell: |
+    kubectl apply -f "{{ role_path }}/files/antrea.yml"
+
+- name: Install metallb
+  shell: |
+    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/manifests/namespace.yaml
+    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/manifests/metallb.yaml
+  when: metallb
+
+- name: configure metallb range
+  shell: |
+    cat <<EOF | kubectl apply -f -
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      namespace: metallb-system
+      name: config
+    data:
+      config: |
+        address-pools:
+        - addresses:
+          - {{metallb_range }}
+          name: default
+          protocol: bgp
+        peers:
+        - my-asn: {{ my_asn }}
+          peer-address: {{ peer_address }}
+          peer-asn: {{ peer_asn }}
+  when: metallb
+
+- name: configure antrea egress ip
+  shell: |
+    kubectl apply -f "{{ role_path }}/files/antrea"
